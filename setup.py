@@ -54,7 +54,10 @@ class test(Command):
         speedups_enabled = os.environ.get('SHAPELY_SPEEDUPS_ENABLED', None)
         if speedups_enabled is not None:
             import shapely.speedups
-            if speedups_enabled == 'TRUE' and shapely.speedups.available:
+            if speedups_enabled == 'TRUE':
+                if not shapely.speedups.available:
+                    print("SHAPELY_SPEEDUPS_ENABLED is TRUE but speedsup are unavailable")
+                    sys.exit(1)
                 shapely.speedups.enable()
             elif speedups_enabled == 'FALSE':
                 shapely.speedups.available = False
