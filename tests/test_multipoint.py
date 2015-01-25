@@ -39,7 +39,18 @@ class MultiPointTestCase(unittest.TestCase):
         geoma = asMultiPoint(coords)
         self.assertEqual(dump_coords(geoma), [[(5.0, 6.0)], [(7.0, 8.0)]])
 
-    @unittest.skipIf(not numpy, 'Numpy required')
+    def test_from_point_array(self):
+        coords = [(1.0, 2.0), (3.0, 4.0), (5.0, 6.0), (7.0, 8.0)]
+        points = [Point(c) for c in coords]
+
+        mp = MultiPoint(coords)
+        mp_points = MultiPoint(points)
+
+        self.assertEquals(mp, mp_points)
+
+
+@unittest.skipIf(not numpy, 'Numpy required')
+class NumpyMultiPointTestCase(unittest.TestCase):
     def test_numpy(self):
 
         from numpy import array, asarray
@@ -67,6 +78,24 @@ class MultiPointTestCase(unittest.TestCase):
 
         pas = asarray(geoma)
         assert_array_equal(pas, array([[1., 2.], [3., 4.]]))
+
+    def test_from_point_array(self):
+        coords = [(1.0, 2.0), (3.0, 4.0), (5.0, 6.0), (7.0, 8.0)]
+        points = numpy.array([Point(c) for c in coords], dtype='object')
+
+        mp = MultiPoint(coords)
+        mp_points = MultiPoint(points)
+
+        self.assertEquals(mp, mp_points)
+
+    def test_from_mixed(self):
+        coords = [(1.0, 2.0), (3.0, 4.0), (5.0, 6.0), (7.0, 8.0)]
+        objs = [coords[0], Point(coords[1]), coords[2], Point(coords[3])]
+
+        mp = MultiPoint(coords)
+        mp_objs = MultiPoint(objs)
+
+        self.assertEquals(mp, mp_objs)
 
 
 def test_suite():
