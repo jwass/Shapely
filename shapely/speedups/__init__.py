@@ -43,9 +43,6 @@ def enable():
     _orig['object_fill_coord_seq'] = coords.ObjectCoordinateWrapper.fill_coordseq
     coords.ObjectCoordinateWrapper.fill_coordseq = method_wrapper(_speedups.fill_coordseq_object)
 
-    _orig['geos_linearring_from_py']  = polygon.geos_linearring_from_py
-    polygon.geos_linearring_from_py = _speedups.geos_linearring_from_py
-    
     _orig['affine_transform'] = shapely.affinity.affine_transform
     # copy docstring from original function
     def affine_transform(geom, matrix):

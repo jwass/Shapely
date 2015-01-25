@@ -135,24 +135,6 @@ class PolygonTestCase(unittest.TestCase):
         self.assertEqual('LinearRing',
                          lgeos.GEOSGeomType(ring._geom).decode('ascii'))
 
-
-    @unittest.skipIf(not numpy, 'Numpy required')
-    def test_numpy(self):
-
-        from numpy import array, asarray
-        from numpy.testing import assert_array_equal
-
-        a = asarray(((0., 0.), (0., 1.), (1., 1.), (1., 0.), (0., 0.)))
-        polygon = Polygon(a)
-        self.assertEqual(len(polygon.exterior.coords), 5)
-        self.assertEqual(dump_coords(polygon.exterior),
-                         [(0., 0.), (0., 1.), (1., 1.), (1., 0.), (0., 0.)])
-        self.assertEqual(len(polygon.interiors), 0)
-        b = asarray(polygon.exterior)
-        self.assertEqual(b.shape, (5, 2))
-        assert_array_equal(
-            b, array([(0., 0.), (0., 1.), (1., 1.), (1., 0.), (0., 0.)]))
-
     def test_dimensions(self):
 
         # Background: see http://trac.gispython.org/lab/ticket/168
@@ -209,6 +191,49 @@ class PolygonTestCase(unittest.TestCase):
         # Test multiple operators, boundary of a buffer
         ec = list(p.buffer(1).boundary.coords)
         self.assertIsInstance(ec, list)  # TODO: this is a poor test
+
+
+@unittest.skipIf(not numpy, 'Numpy required')
+class NumpyPolygonTestCase(unittest.TestCase):
+    def test_numpy(self):
+        from numpy import array, asarray
+        from numpy.testing import assert_array_equal
+
+        a = asarray(((0., 0.), (0., 1.), (1., 1.), (1., 0.), (0., 0.)))
+        polygon = Polygon(a)
+        self.assertEqual(len(polygon.exterior.coords), 5)
+        self.assertEqual(dump_coords(polygon.exterior),
+                         [(0., 0.), (0., 1.), (1., 1.), (1., 0.), (0., 0.)])
+        self.assertEqual(len(polygon.interiors), 0)
+        b = asarray(polygon.exterior)
+        self.assertEqual(b.shape, (5, 2))
+        assert_array_equal(
+            b, array([(0., 0.), (0., 1.), (1., 1.), (1., 0.), (0., 0.)]))
+
+    def test_from_point_array(self):
+        coords = [(0.0, 1.0), (2.0, 3.0), (4.0, 5.0), (6.0, 7.0)]
+        points = numpy.array([Point(c) for c in coords], dtype='object')
+        poly = Polygon(points)
+
+        expected = coords + [coords[0]]
+
+        self.assertEqual(list(poly.exterior.coords), expected)
+
+    def test_interiors_mixed(self):
+        ext = [(0.0, 0.0), (5.0, 0.0), (5.0, 5.0), (0.0, 5.0)]
+        exterior = [ext[0], Point(ext[1]), ext[2], Point(ext[3])]
+
+        int1 = [(0.5, 0.5), (1.5, 0.5), (1.5, 1.5), (0.5, 1.5)]
+        int2 = [(2.0, 2.0), (3.0, 2.0), (3.0, 3.0), (2.0, 3.0)]
+
+        interior1 = int1
+        interior2 = [Point(int2[0]), int2[1], Point(int2[2]), int2[3], int2[0]]
+
+        poly = Polygon(exterior, numpy.array([interior1, interior2]))
+        self.assertEqual(poly, Polygon(ext, [int1, int2]))
+
+        poly = Polygon(exterior, [interior1, interior2])
+        self.assertEqual(poly, Polygon(ext, [int1, int2]))
 
 
 def test_suite():
