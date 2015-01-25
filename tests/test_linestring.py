@@ -87,7 +87,8 @@ class LineStringTestCase(unittest.TestCase):
                          lgeos.GEOSGeomType(copy._geom).decode('ascii'))
 
 
-    @unittest.skipIf(not numpy, 'Numpy required')
+@unittest.skipIf(not numpy, 'Numpy required')
+class NumpyLineStringTestCase(unittest.TestCase):
     def test_numpy(self):
 
         from numpy import array, asarray
@@ -131,6 +132,21 @@ class LineStringTestCase(unittest.TestCase):
 
         b = asarray(line)
         assert_array_equal(b, array([[0., 0.], [2., 2.], [1., 1.]]))
+
+    def test_from_point_array(self):
+        coords = [(0.0, 1.0), (2.0, 3.0), (4.0, 5.0), (6.0, 7.0)]
+        points = numpy.array([Point(c) for c in coords], dtype='object')
+        line = LineString(points)
+
+        self.assertEqual(list(line.coords), coords)
+
+    def test_from_point_numeric_mix_array(self):
+        coords = [(0.0, 1.0), (2.0, 3.0), (4.0, 5.0), (6.0, 7.0)]
+        points = numpy.array([coords[0], Point(coords[1]), coords[2], 
+                              Point(coords[3])])
+        line = LineString(points)
+
+        self.assertEqual(list(line.coords), coords)
 
 
 def test_suite():

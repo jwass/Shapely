@@ -7,7 +7,7 @@
 
 import ctypes
 
-from shapely.coords import required
+from shapely.coords import required, require_numeric
 from shapely.geos import lgeos
 from shapely.geometry import Point, LineString, LinearRing
 from shapely.geometry.base import geom_factory
@@ -31,146 +31,81 @@ def destroy(geom):
     GEOSGeom_destroy_r(cast_handle(lgeos.geos_handle), cast_geom(geom))
 
 
-def geos_linestring_from_py(ob, update_geom=None, update_ndim=0):
-    cdef double *cp
+def fill_coordseq_array(self, seq, int n_points, int seq_offset, int array_offset):
     cdef GEOSContextHandle_t handle = cast_handle(lgeos.geos_handle)
-    cdef GEOSCoordSequence *cs
-    cdef GEOSGeometry *g
+    cdef GEOSCoordSequence *cs = <GEOSCoordSequence *><unsigned long>seq
+
     cdef double dx, dy, dz
-    cdef int i, n, m, sm, sn
+    cdef double *cp
+    cdef int i, sm, sn, seq_i, array_i
+    cdef int n = self.shape[1]
 
-    # If a LineString is passed in, just clone it and return
-    # If a LinearRing is passed in, clone the coord seq and return a LineString
-    if isinstance(ob, LineString):
-        g = cast_geom(ob._geom)
-        if GEOSHasZ_r(handle, g):
-            n = 3
-        else:
-            n = 2
-
-        if type(ob) == LineString:
-            return <unsigned long>GEOSGeom_clone_r(handle, g), n
-        else:
-            cs = GEOSGeom_getCoordSeq_r(handle, g)
-            cs = GEOSCoordSeq_clone_r(handle, cs)
-            return <unsigned long>GEOSGeom_createLineString_r(handle, cs), n
-
-    # If numpy is present, we use numpy.require to ensure that we have a
-    # C-continguous array that owns its data. View data will be copied.
-    ob = required(ob)
-    try:
-        # From array protocol
-        array = ob.__array_interface__
-        assert len(array['shape']) == 2
-        m = array['shape'][0]
-        if m < 2:
-            raise ValueError(
-                "LineStrings must have at least 2 coordinate tuples")
-        try:
-            n = array['shape'][1]
-        except IndexError:
-            raise ValueError(
-                "Input %s is the wrong shape for a LineString" % str(ob))
-        assert n == 2 or n == 3
-
-        # Make pointer to the coordinate array
-        if isinstance(array['data'], ctypes.Array):
-            cp = <double *><unsigned long>ctypes.addressof(array['data'])
-        else:
-            cp = <double *><unsigned long>array['data'][0]
-
-        # Use strides to properly index into cp
-        # ob[i, j] == cp[sm*i + sn*j]
-        # Just to avoid a referenced before assignment warning.
-        dx = 0
-        if array.get('strides', None):
-            sm = array['strides'][0]/sizeof(dx)
-            sn = array['strides'][1]/sizeof(dx)
-        else:
-            sm = n
-            sn = 1
-
-        # Create a coordinate sequence
-        if update_geom is not None:
-            cs = GEOSGeom_getCoordSeq_r(handle, cast_geom(update_geom))
-            if n != update_ndim:
-                raise ValueError(
-                "Wrong coordinate dimensions; this geometry has dimensions: %d" \
-                % update_ndim)
-        else:
-            cs = GEOSCoordSeq_create_r(handle, <int>m, <int>n)
-
-        # add to coordinate sequence
-        for i in xrange(m):
-            dx = cp[sm*i]
-            dy = cp[sm*i+sn]
-            dz = 0
-            if n == 3:
-                dz = cp[sm*i+2*sn]
-                
-            # Because of a bug in the GEOS C API, 
-            # always set X before Y
-            GEOSCoordSeq_setX_r(handle, cs, i, dx)
-            GEOSCoordSeq_setY_r(handle, cs, i, dy)
-            if n == 3:
-                GEOSCoordSeq_setZ_r(handle, cs, i, dz)
-
-    except AttributeError:
-        # Fall back on list
-        try:
-            m = len(ob)
-        except TypeError:  # Iterators, e.g. Python 3 zip
-            ob = list(ob)
-            m = len(ob)
-        if m < 2:
-            raise ValueError(
-                "LineStrings must have at least 2 coordinate tuples")
-
-        def _coords(o):
-            if isinstance(o, Point):
-                return o.coords[0]
-            else:
-                return o
-
-        try:
-            n = len(_coords(ob[0]))
-        except TypeError:
-            raise ValueError(
-                "Input %s is the wrong shape for a LineString" % str(ob))
-        assert n == 2 or n == 3
-
-        # Create a coordinate sequence
-        if update_geom is not None:
-            cs = GEOSGeom_getCoordSeq_r(handle, cast_geom(update_geom))
-            if n != update_ndim:
-                raise ValueError(
-                "Wrong coordinate dimensions; this geometry has dimensions: %d" \
-                % update_ndim)
-        else:
-            cs = GEOSCoordSeq_create_r(handle, <int>m, <int>n)
-
-        # add to coordinate sequence
-        for i in xrange(m):
-            coords = _coords(ob[i])
-            dx = coords[0]
-            dy = coords[1]
-            dz = 0
-            if n == 3:
-                if len(coords) != 3:
-                    raise ValueError("Inconsistent coordinate dimensionality")
-                dz = coords[2]
-            
-            # Because of a bug in the GEOS C API, 
-            # always set X before Y
-            GEOSCoordSeq_setX_r(handle, cs, i, dx)
-            GEOSCoordSeq_setY_r(handle, cs, i, dy)
-            if n == 3:
-                GEOSCoordSeq_setZ_r(handle, cs, i, dz)
-
-    if update_geom is not None:
-        return None
+    # Make pointer to the coordinate array
+    if isinstance(self.array['data'], ctypes.Array):
+        cp = <double *><unsigned long>ctypes.addressof(self.array['data'])
     else:
-        return <unsigned long>GEOSGeom_createLineString_r(handle, cs), n
+        cp = <double *><unsigned long>self.array['data'][0]
+
+    # Use strides to properly index into cp
+    # ob[i, j] == cp[sm*i + sn*j]
+    # Just to avoid a referenced before assignment warning.
+    dx = 0
+    if self.array.get('strides', None):
+        sm = self.array['strides'][0]/sizeof(dx)
+        sn = self.array['strides'][1]/sizeof(dx)
+    else:
+        sm = n
+        sn = 1
+
+    for i in range(n_points):
+        array_i = array_offset + i
+        dx = cp[sm*array_i]
+        dy = cp[sm*array_i+sn]
+        dz = 0
+        if n == 3:
+            dz = cp[sm*array_i+2*sn]
+            
+        seq_i = seq_offset + i
+        # Because of a bug in the GEOS C API, 
+        # always set X before Y
+        GEOSCoordSeq_setX_r(handle, cs, seq_i, dx)
+        GEOSCoordSeq_setY_r(handle, cs, seq_i, dy)
+        if n == 3:
+            GEOSCoordSeq_setZ_r(handle, cs, seq_i, dz)
+
+
+def fill_coordseq_object(self, seq, int n_points, int seq_offset, int array_offset):
+    cdef GEOSContextHandle_t handle = cast_handle(lgeos.geos_handle)
+    cdef GEOSCoordSequence *cs = <GEOSCoordSequence *><unsigned long>seq
+
+    cdef double dx, dy, dz
+    cdef int i, seq_i, array_i
+    cdef int n = self.shape[1]
+
+    for i in range(n_points):
+        array_i = array_offset + i
+        o = self.ob[array_i]
+
+        if hasattr(o, 'coords'):
+            coords = o.coords[0]
+        else:
+            coords = o
+
+        dx = coords[0]
+        dy = coords[1]
+        dz = 0
+        if n == 3:
+            if len(coords) != 3:
+                raise ValueError("Inconsistent coordinate dimensionality")
+            dz = coords[2]
+
+        seq_i = seq_offset + i
+        # Because of a bug in the GEOS C API, 
+        # always set X before Y
+        GEOSCoordSeq_setX_r(handle, cs, seq_i, dx)
+        GEOSCoordSeq_setY_r(handle, cs, seq_i, dy)
+        if n == 3:
+            GEOSCoordSeq_setZ_r(handle, cs, seq_i, dz)
 
 
 def geos_linearring_from_py(ob, update_geom=None, update_ndim=0):

@@ -3,7 +3,7 @@
 
 import sys
 from array import array
-from ctypes import byref, c_double, c_uint
+from ctypes import byref, cast, c_double, c_uint, POINTER
 
 from shapely.geos import lgeos
 from shapely.topology import Validating
@@ -31,6 +31,25 @@ def required(ob):
             return numpy.require(ob, numpy.float64, ["C", "OWNDATA"])
     else:
         return ob
+
+
+def require_numeric(ob):
+    """
+    Return an object that meets Shapely requirements for self-owned
+    C-continguous data, copying if necessary, or return None.
+
+    """
+    if (hasattr(ob, '__array_interface__') and 
+            not ob.__array_interface__['typestr'].startswith('|O')):
+        if ob.__array_interface__.get('strides') and not has_numpy:
+            # raise an error if strided. See issue #52.
+            raise ValueError("C-contiguous data is required")
+        else:
+            # numpy.require will just return (ob) if it is already
+            # float64 and well-behaved.
+            return numpy.require(ob, numpy.float64, ["C", "OWNDATA"])
+    else:
+        return None
 
 
 class CoordinateSequence(object):
@@ -205,3 +224,96 @@ class BoundsOp(Validating):
             if y < miny: miny = y
             if y > maxy: maxy = y
         return (minx, miny, maxx, maxy)
+
+
+class ArrayCoordinateWrapper(object):
+    def __init__(self, array):
+        self.array = array.__array_interface__
+        self.shape = self.array['shape']
+
+        if isinstance(self.array['data'], tuple):
+            # numpy tuple (addr, read-only)
+            self.data = cast(self.array['data'][0], POINTER(c_double))
+        else:
+            self.data = array['data']
+
+    def coords(self, i):
+        n_dim = self.shape[1]
+        dx = c_double(self.data[n_dim*i]).value
+        dy = c_double(self.data[n_dim*i+1]).value
+        if self.shape[1] == 3:
+            try:
+                dz = c_double(self.data[n_dim*i+2]).value
+            except IndexError:
+                raise ValueError("Inconsistent coordinate dimensionality")
+            c = (dx, dy, dz)
+        else:
+            c = (dx, dy)
+
+        return c
+
+    def fill_coordseq(self, seq, n_points, seq_offset, array_offset):
+        n_dim = self.shape[1]
+        for i in range(n_points):
+            array_i = array_offset + i
+            dx = c_double(self.data[n_dim*array_i])
+            dy = c_double(self.data[n_dim*array_i+1])
+            dz = None
+            if n_dim == 3:
+                try:
+                    dz = c_double(self.data[n_dim*array_i+2])
+                except IndexError:
+                    raise ValueError("Inconsistent coordinate dimensionality")
+
+            # Because of a bug in the GEOS C API,
+            # always set X before Y
+            seq_i = seq_offset + i
+            lgeos.GEOSCoordSeq_setX(seq, seq_i, dx)
+            lgeos.GEOSCoordSeq_setY(seq, seq_i, dy)
+            if n_dim == 3:
+                lgeos.GEOSCoordSeq_setZ(seq, seq_i, dz)
+
+
+class ObjectCoordinateWrapper(object):
+    def __init__(self, ob):
+        self.ob = ob
+
+        try:
+            m = len(ob)
+        except TypeError:  # Iterators, e.g. Python 3 zip
+            self.ob = list(ob)
+            m = len(self.ob)
+
+        try:
+            n = len(self.coords(0))
+        except TypeError:
+            raise ValueError(
+                "Input %s is the wrong shape for coordinates" % str(self.ob))
+
+        self.shape = (m, n)
+
+    def coords(self, i):
+        o = self.ob[i]
+        if hasattr(o, 'coords'):
+            return o.coords[0]
+        else:
+            return o
+
+    def fill_coordseq(self, seq, n_points, seq_offset, array_offset):
+        n_dim = self.shape[1]
+        for i in range(n_points):
+            array_i = array_offset + i
+            coords = self.coords(array_i)
+
+            # Because of a bug in the GEOS C API,
+            # always set X before Y
+            seq_i = seq_offset + i
+            lgeos.GEOSCoordSeq_setX(seq, seq_i, coords[0])
+            lgeos.GEOSCoordSeq_setY(seq, seq_i, coords[1])
+            if n_dim == 3:
+                try:
+                    lgeos.GEOSCoordSeq_setZ(seq, seq_i, coords[2])
+                except IndexError:
+                    raise ValueError("Inconsistent coordinate dimensionality")
+
+

@@ -6,9 +6,8 @@ import sys
 if sys.version_info[0] < 3:
     range = xrange
 
-from ctypes import c_double, cast, POINTER
-
-from shapely.coords import required
+from shapely.coords import (
+    require_numeric, ArrayCoordinateWrapper, ObjectCoordinateWrapper)
 from shapely.geos import lgeos, TopologicalError
 from shapely.geometry.base import (
     BaseGeometry, geom_factory, JOIN_STYLE, geos_geom_from_py
@@ -190,104 +189,31 @@ def geos_linestring_from_py(ob, update_geom=None, update_ndim=0):
 
     # If numpy is present, we use numpy.require to ensure that we have a
     # C-continguous array that owns its data. View data will be copied.
-    ob = required(ob)
-    try:
-        # From array protocol
-        array = ob.__array_interface__
-        assert len(array['shape']) == 2
-        m = array['shape'][0]
-        if m < 2:
+    array = require_numeric(ob)
+    if array is not None:
+        coords = ArrayCoordinateWrapper(array)
+    else:
+        coords = ObjectCoordinateWrapper(ob)
+
+    shape = coords.shape
+    assert len(shape) == 2
+    m, n = shape
+    if m < 2:
+        raise ValueError(
+            "LineStrings must have at least 2 coordinate tuples")
+    assert n == 2 or n == 3
+
+    # Create a coordinate sequence
+    if update_geom is not None:
+        cs = lgeos.GEOSGeom_getCoordSeq(update_geom)
+        if n != update_ndim:
             raise ValueError(
-                "LineStrings must have at least 2 coordinate tuples")
-        try:
-            n = array['shape'][1]
-        except IndexError:
-            raise ValueError(
-                "Input %s is the wrong shape for a LineString" % str(ob))
-        assert n == 2 or n == 3
+                "Wrong coordinate dimensions; this geometry has "
+                "dimensions: %d" % update_ndim)
+    else:
+        cs = lgeos.GEOSCoordSeq_create(m, n)
 
-        # Make pointer to the coordinate array
-        if isinstance(array['data'], tuple):
-            # numpy tuple (addr, read-only)
-            cp = cast(array['data'][0], POINTER(c_double))
-        else:
-            cp = array['data']
-
-        # Create a coordinate sequence
-        if update_geom is not None:
-            cs = lgeos.GEOSGeom_getCoordSeq(update_geom)
-            if n != update_ndim:
-                raise ValueError(
-                    "Wrong coordinate dimensions; this geometry has "
-                    "dimensions: %d" % update_ndim)
-        else:
-            cs = lgeos.GEOSCoordSeq_create(m, n)
-
-        # add to coordinate sequence
-        for i in range(m):
-            dx = c_double(cp[n*i])
-            dy = c_double(cp[n*i+1])
-            dz = None
-            if n == 3:
-                try:
-                    dz = c_double(cp[n*i+2])
-                except IndexError:
-                    raise ValueError("Inconsistent coordinate dimensionality")
-
-            # Because of a bug in the GEOS C API,
-            # always set X before Y
-            lgeos.GEOSCoordSeq_setX(cs, i, dx)
-            lgeos.GEOSCoordSeq_setY(cs, i, dy)
-            if n == 3:
-                lgeos.GEOSCoordSeq_setZ(cs, i, dz)
-
-    except AttributeError:
-        # Fall back on list
-        try:
-            m = len(ob)
-        except TypeError:  # Iterators, e.g. Python 3 zip
-            ob = list(ob)
-            m = len(ob)
-
-        if m < 2:
-            raise ValueError(
-                "LineStrings must have at least 2 coordinate tuples")
-
-        def _coords(o):
-            if isinstance(o, Point):
-                return o.coords[0]
-            else:
-                return o
-
-        try:
-            n = len(_coords(ob[0]))
-        except TypeError:
-            raise ValueError(
-                "Input %s is the wrong shape for a LineString" % str(ob))
-        assert n == 2 or n == 3
-
-        # Create a coordinate sequence
-        if update_geom is not None:
-            cs = lgeos.GEOSGeom_getCoordSeq(update_geom)
-            if n != update_ndim:
-                raise ValueError(
-                    "Wrong coordinate dimensions; this geometry has "
-                    "dimensions: %d" % update_ndim)
-        else:
-            cs = lgeos.GEOSCoordSeq_create(m, n)
-
-        # add to coordinate sequence
-        for i in range(m):
-            coords = _coords(ob[i])
-            # Because of a bug in the GEOS C API,
-            # always set X before Y
-            lgeos.GEOSCoordSeq_setX(cs, i, coords[0])
-            lgeos.GEOSCoordSeq_setY(cs, i, coords[1])
-            if n == 3:
-                try:
-                    lgeos.GEOSCoordSeq_setZ(cs, i, coords[2])
-                except IndexError:
-                    raise ValueError("Inconsistent coordinate dimensionality")
+    coords.fill_coordseq(cs, m, 0, 0)
 
     if update_geom is not None:
         return None

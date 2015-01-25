@@ -37,8 +37,11 @@ def enable():
     _orig['CoordinateSequence.__iter__'] = coords.CoordinateSequence.__iter__
     coords.CoordinateSequence.__iter__ = method_wrapper(_speedups.coordseq_iter)
 
-    _orig['geos_linestring_from_py'] = linestring.geos_linestring_from_py
-    linestring.geos_linestring_from_py = _speedups.geos_linestring_from_py
+    _orig['array_fill_coord_seq'] = coords.ArrayCoordinateWrapper.fill_coordseq
+    coords.ArrayCoordinateWrapper.fill_coordseq = method_wrapper(_speedups.fill_coordseq_array)
+
+    _orig['object_fill_coord_seq'] = coords.ObjectCoordinateWrapper.fill_coordseq
+    coords.ObjectCoordinateWrapper.fill_coordseq = method_wrapper(_speedups.fill_coordseq_object)
 
     _orig['geos_linearring_from_py']  = polygon.geos_linearring_from_py
     polygon.geos_linearring_from_py = _speedups.geos_linearring_from_py
@@ -56,6 +59,8 @@ def disable():
 
     coords.CoordinateSequence.ctypes = _orig['CoordinateSequence.ctypes']
     coords.CoordinateSequence.__iter__ = _orig['CoordinateSequence.__iter__']
+    coords.ArrayCoordinateWrapper.fill_coordseq = _orig['array_fill_coord_seq']
+    coords.ObjectCoordinateWrapper.fill_coordseq = _orig['object_fill_coord_seq']
     linestring.geos_linestring_from_py = _orig['geos_linestring_from_py']
     polygon.geos_linearring_from_py = _orig['geos_linearring_from_py']
     affinity.affine_transform = _orig['affine_transform']
