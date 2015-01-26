@@ -1,6 +1,6 @@
 from . import unittest, numpy
 from shapely.geos import lgeos
-from shapely.geometry import LineString, MultiLineString, asMultiLineString
+from shapely.geometry import Point, LineString, MultiLineString, asMultiLineString
 from shapely.geometry.base import dump_coords
 
 
@@ -53,9 +53,9 @@ class MultiLineStringTestCase(unittest.TestCase):
         self.assertEqual(dump_coords(copy.geoms[1]), coords2)
 
 
-    @unittest.skipIf(not numpy, 'Numpy required')
+@unittest.skipIf(not numpy, 'Numpy required')
+class NumpyMultiLineStringTestCase(unittest.TestCase):
     def test_numpy(self):
-
         from numpy import array
         from numpy.testing import assert_array_equal
 
@@ -72,7 +72,30 @@ class MultiLineStringTestCase(unittest.TestCase):
         self.assertEqual(dump_coords(geoma), [[(1.0, 2.0), (3.0, 4.0)]])
 
         # TODO: is there an inverse?
+    
+    def test_from_linestring_array(self):
+        coords1 = [(0.0, 1.0), (2.0, 3.0), (4.0, 5.0), (6.0, 7.0)]
+        coords2 = [(8.0, 9.0), (10.0, 11.0)]
 
+        line1 = LineString(coords1)
+        line2 = LineString(coords2)
+
+        ml = MultiLineString(numpy.array([line1, line2], dtype='object'))
+        ml_expected = MultiLineString([coords1, coords2])
+
+        self.assertEqual(ml, ml_expected)
+
+    def test_from_linestring_mixed(self):
+        coords1 = [(0.0, 1.0), (2.0, 3.0), (4.0, 5.0), (6.0, 7.0)]
+        coords2 = [(8.0, 9.0), (10.0, 11.0)]
+
+        line1 = LineString(coords1)
+        line2 = [coords2[0], Point(coords2[1])]
+
+        ml = MultiLineString(numpy.array([line1, line2], dtype='object'))
+        ml_expected = MultiLineString([coords1, coords2])
+
+        self.assertEqual(ml, ml_expected)
 
 def test_suite():
     return unittest.TestLoader().loadTestsFromTestCase(MultiLineStringTestCase)
