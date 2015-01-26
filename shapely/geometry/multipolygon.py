@@ -55,7 +55,7 @@ class MultiPolygon(BaseMultipartGeometry):
         """
         super(MultiPolygon, self).__init__()
 
-        if not polygons:
+        if polygons is None or len(polygons) == 0:
             # allow creation of empty multipolygons, to support unpickling
             pass
         elif context_type == 'polygons':
